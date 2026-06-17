@@ -1,6 +1,6 @@
 //! Command-line interface: `list`, `export`, `share`, and `skills install|uninstall`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -50,7 +50,7 @@ enum Command {
         to: String,
         #[arg(long)]
         session: Option<String>,
-        /// Transcript output path (default: ./shared-chat-<id>.md).
+        /// Transcript output path (default: ./.agents/acs/transcripts/shared-chat-<id>.md).
         #[arg(long)]
         out: Option<PathBuf>,
     },
@@ -210,8 +210,8 @@ fn cmd_share(from: &str, to: &str, session: Option<&str>, out: Option<PathBuf>) 
     let conv = source.read(session, &scope)?;
     let transcript = render::render(&conv, &RenderOptions::default());
 
-    let out_path =
-        out.unwrap_or_else(|| PathBuf::from(format!("shared-chat-{}.md", conv.metadata.id)));
+    let out_path = out.unwrap_or_else(|| default_share_out_path(&conv.metadata.id));
+    ensure_parent_dir(&out_path)?;
     std::fs::write(&out_path, &transcript)?;
 
     let seed = target.seed_command(&out_path)?;
@@ -223,6 +223,20 @@ fn cmd_share(from: &str, to: &str, session: Option<&str>, out: Option<PathBuf>) 
     );
     println!("Run this to continue in {to}:\n");
     println!("  {}", seed.shell);
+    Ok(())
+}
+
+fn default_share_out_path(session_id: &str) -> PathBuf {
+    PathBuf::from(".agents")
+        .join("acs")
+        .join("transcripts")
+        .join(format!("shared-chat-{session_id}.md"))
+}
+
+fn ensure_parent_dir(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
+    }
     Ok(())
 }
 
@@ -267,4 +281,18 @@ fn cmd_skills(action: SkillsAction) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::default_share_out_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn default_share_output_goes_under_agent_state() {
+        assert_eq!(
+            default_share_out_path("abc123"),
+            PathBuf::from(".agents/acs/transcripts/shared-chat-abc123.md")
+        );
+    }
 }

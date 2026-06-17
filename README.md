@@ -42,10 +42,10 @@ acs share --from opencode --to codex
 `share` writes a transcript file and prints a seed command, e.g.:
 
 ```
-Wrote shared-chat-<id>.md (42 turns)
+Wrote .agents/acs/transcripts/shared-chat-<id>.md (42 turns)
 Run this to continue in codex:
 
-  codex "Continue this prior conversation… $(cat 'shared-chat-<id>.md')"
+  codex "Continue this prior conversation… $(cat '.agents/acs/transcripts/shared-chat-<id>.md')"
 ```
 
 Run that command to continue the conversation in the target agent.

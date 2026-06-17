@@ -36,10 +36,10 @@ relay the command for the user to run.**
 3. `acs` writes a transcript file and prints a seed command, e.g.:
 
    ```
-   Wrote shared-chat.md (42 turns)
+   Wrote .agents/acs/transcripts/shared-chat.md (42 turns)
    Run this to continue in codex:
 
-     codex "Continue this prior conversation… $(cat 'shared-chat.md')"
+     codex "Continue this prior conversation… $(cat '.agents/acs/transcripts/shared-chat.md')"
    ```
 
 4. **Relay to the user** the transcript path and the exact seed command, and tell
