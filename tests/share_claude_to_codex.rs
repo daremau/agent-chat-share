@@ -59,14 +59,14 @@ fn share_claude_to_codex_end_to_end() {
     fs::write(&out, &transcript).unwrap();
 
     // Target: Codex emits a runnable seed command referencing the transcript.
-    let codex = CodexAdapter::new();
+    let codex_home = home.join("codex-home");
+    let codex = CodexAdapter::with_home(&codex_home);
     let seed = codex.seed_command(&out).unwrap();
     assert!(seed.shell.starts_with("codex "));
     assert!(seed.shell.contains(&out.display().to_string()));
 
     // Codex storage was never created/written by acs.
-    let codex_sessions = home.join("..").join(".codex");
-    assert!(!codex_sessions.exists());
+    assert!(!codex_home.exists());
 
     fs::remove_dir_all(&home).ok();
     fs::remove_file(&out).ok();

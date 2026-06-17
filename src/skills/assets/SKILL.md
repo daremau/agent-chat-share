@@ -29,8 +29,9 @@ relay the command for the user to run.**
    ```
 
    `acs` selects the current session automatically (for Claude Code it reads
-   `$CLAUDE_CODE_SESSION_ID`). To share a specific session instead, pass
-   `--session <id>`; use `acs list --agent <source>` to find session ids.
+   `$CLAUDE_CODE_SESSION_ID`; for Codex/OpenCode it uses the newest session for
+   the current directory). To share a specific session instead, pass `--session
+   <id>`; use `acs list --agent <source>` to find session ids.
 
 3. `acs` writes a transcript file and prints a seed command, e.g.:
 
@@ -47,6 +48,7 @@ relay the command for the user to run.**
 
 ## Notes
 
-- Only `--from claude --to codex` is fully supported today. Other directions
-  report a clear "not yet supported" message — relay that to the user.
+- All directions between `claude`, `codex`, and `opencode` are supported when
+  the source agent's local session storage is available. OpenCode read support
+  expects the `sqlite3` CLI to be available.
 - `acs` only writes a transcript file; it never modifies any agent's sessions.

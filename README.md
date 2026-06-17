@@ -10,10 +10,10 @@ run.
 
 ## Why transcript-seed (not native sessions)
 
-Codex and OpenCode index their sessions in private SQLite databases, and the
-agents' tool vocabularies don't overlap. Rather than forge native, resumable
-sessions (fragile and version-coupled), `acs` hands the target a readable
-transcript as seed context. See `openspec/changes/add-chat-share-cli/design.md`.
+Agents store/index sessions differently, and their tool vocabularies don't
+overlap. Rather than forge native, resumable sessions (fragile and
+version-coupled), `acs` hands the target a readable transcript as seed context.
+See `openspec/changes/add-chat-share-cli/design.md`.
 
 ## Install
 
@@ -33,8 +33,10 @@ acs list --agent claude --json
 acs export --agent claude --out shared-chat.md
 acs export --agent claude --format json --out chat.json
 
-# One-shot: read the current chat and print a command to continue it in Codex
+# One-shot: read the current chat and print a command to continue it in another agent
 acs share --from claude --to codex
+acs share --from codex --to claude
+acs share --from opencode --to codex
 ```
 
 `share` writes a transcript file and prints a seed command, e.g.:
@@ -46,7 +48,7 @@ Run this to continue in codex:
   codex "Continue this prior conversation… $(cat 'shared-chat-<id>.md')"
 ```
 
-Run that command to continue the conversation in Codex.
+Run that command to continue the conversation in the target agent.
 
 Session selection: with no `--session`, `acs` uses the current session — for
 Claude Code it reads `$CLAUDE_CODE_SESSION_ID`, otherwise it picks the most
@@ -66,9 +68,12 @@ acs skills uninstall
 
 ## Status
 
-- **Supported end-to-end:** Claude Code (read) → Codex (seed).
-- **Scaffolded:** Codex/OpenCode read, OpenCode seed — report a clear "not yet
-  supported" message. The OpenCode read adapter will query its SQLite database.
+- **Supported end-to-end:** all directions between `claude`, `codex`, and
+  `opencode`.
+- **Read sources:** Claude Code JSONL sessions, Codex rollout JSONL sessions,
+  and OpenCode's SQLite session database.
+- **Seed targets:** Claude Code, Codex, and OpenCode initial-prompt commands.
+- OpenCode read support expects the `sqlite3` CLI to be available.
 
 ## Development
 

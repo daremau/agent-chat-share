@@ -1,5 +1,6 @@
-//! Claude Code source adapter. Reads `~/.claude/projects/<encoded-cwd>/<id>.jsonl`
-//! session logs into the canonical model. Seeding into Claude is not implemented.
+//! Claude Code adapter. Reads `~/.claude/projects/<encoded-cwd>/<id>.jsonl`
+//! session logs into the canonical model, and emits a transcript seed command
+//! for Claude as a target.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,6 +15,9 @@ use crate::model::{Block, Conversation, Message, Metadata, Role};
 const ENV_SESSION: &str = "CLAUDE_CODE_SESSION_ID";
 /// Environment override for the Claude home directory (testing).
 const ENV_HOME: &str = "ACS_CLAUDE_HOME";
+/// Prompt prefix that tells Claude to continue the attached transcript.
+const SEED_PREFIX: &str =
+    "Continue this prior conversation from another coding assistant. Pick up where it left off. Transcript follows:";
 
 pub struct ClaudeAdapter {
     /// Claude home directory (`~/.claude` by default).
@@ -66,7 +70,7 @@ impl Adapter for ClaudeAdapter {
     fn roles(&self) -> Roles {
         Roles {
             read: true,
-            seed: false,
+            seed: true,
         }
     }
 
@@ -135,12 +139,18 @@ impl Adapter for ClaudeAdapter {
         parse_session_file(&path).map_err(Error::Other)
     }
 
-    fn seed_command(&self, _transcript: &Path) -> Result<SeedCommand> {
-        Err(Error::Unsupported {
-            agent: "claude".to_string(),
-            role: "seed",
+    fn seed_command(&self, transcript: &Path) -> Result<SeedCommand> {
+        Ok(SeedCommand {
+            program: "claude".to_string(),
+            shell: build_seed_shell(transcript),
         })
     }
+}
+
+fn build_seed_shell(transcript: &Path) -> String {
+    let path = transcript.display().to_string();
+    let quoted_path = format!("'{}'", path.replace('\'', r"'\''"));
+    format!("claude \"{SEED_PREFIX} $(cat {quoted_path})\"")
 }
 
 fn newest_id(adapter: &ClaudeAdapter, scope: &Scope) -> Result<String> {
@@ -390,9 +400,12 @@ mod tests {
     }
 
     #[test]
-    fn seed_is_unsupported() {
+    fn seed_command_references_transcript_and_uses_claude() {
         let a = ClaudeAdapter::with_home("/nonexistent");
-        let err = a.seed_command(Path::new("/tmp/x.md")).unwrap_err();
-        assert!(matches!(err, Error::Unsupported { role: "seed", .. }));
+        let cmd = a.seed_command(Path::new("/tmp/x.md")).unwrap();
+        assert_eq!(cmd.program, "claude");
+        assert!(cmd.shell.starts_with("claude "));
+        assert!(cmd.shell.contains("/tmp/x.md"));
+        assert!(cmd.shell.contains("$(cat"));
     }
 }
