@@ -1,5 +1,21 @@
-/.claude
-/.codex
-/.opencode
-/openspec
-/shared-chat-9977b7a1-60d2-4c11-aa98-974954cdb5f4.md
+# Rust build output
+/target/
+
+# Local agent/project state
+/.agents/
+/.claude/
+/.codex/
+/.opencode/
+/openspec/
+
+# Generated handoff transcripts
+/shared-chat-*.md
+
+# Editor/OS noise
+.DS_Store
+*.swp
+*.swo
+
+# Logs and temporary files
+*.log
+*.tmp
