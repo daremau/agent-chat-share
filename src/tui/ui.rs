@@ -7,9 +7,18 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::tui::app::{App, Screen};
+use crate::tui::app::{App, Focus, Screen};
 
-const KEYMAP: &str = " ←/→ source · Tab target · ↑/↓ move · Enter open · s share · e export · r reload · ? help · q quit ";
+const KEYMAP: &str = " ←/→ source · Space target · Tab focus · ↑/↓ move/scroll · ^U/^D fast scroll · s share · e export · r reload · ? help · q quit ";
+
+/// Border style for a pane, brighter when it currently has focus.
+fn border_style(focused: bool) -> Style {
+    if focused {
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    }
+}
 
 pub fn draw(f: &mut Frame, app: &App) {
     let area = f.area();
@@ -105,7 +114,12 @@ fn draw_sidebar(f: &mut Frame, area: Rect, app: &App) {
             })
             .collect(),
     };
-    let list = List::new(items).block(Block::default().borders(Borders::ALL).title(title));
+    let focused = matches!(app.focus, Focus::Sessions);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(border_style(focused));
+    let list = List::new(items).block(block);
     f.render_widget(list, area);
 }
 
@@ -119,9 +133,21 @@ fn draw_preview(f: &mut Frame, area: Rect, app: &App) {
             _ => "Pick a session and press Enter to preview.".to_string(),
         },
     };
+    let focused = matches!(app.focus, Focus::Transcript);
+    let title = if app.transcript.is_some() && app.transcript_lines > 0 {
+        format!("Transcript · line {}/{}", app.scroll, app.transcript_lines)
+    } else {
+        "Transcript".to_string()
+    };
     let p = Paragraph::new(body)
-        .block(Block::default().borders(Borders::ALL).title("Transcript"))
-        .wrap(Wrap { trim: false });
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style(focused)),
+        )
+        .wrap(Wrap { trim: false })
+        .scroll((app.scroll, 0));
     f.render_widget(p, area);
 }
 
@@ -146,9 +172,11 @@ fn draw_help_modal(f: &mut Frame, area: Rect) {
         .title("Help · press ? or Esc to close");
     let text = "\
 ←/→        cycle source agent
-Tab        cycle target agent
-↑/↓ or j/k move session cursor
-Enter      open the highlighted session
+Space      cycle target agent
+Tab        switch focus: session list ⇄ transcript
+↑/↓ or j/k focused pane: move cursor / scroll transcript
+Ctrl-D/U   fast scroll transcript (any focus)
+Enter      open session and focus the transcript
 s          share (writes transcript, shows seed command)
 e          export (writes transcript or JSON to a path)
 r          reload session list

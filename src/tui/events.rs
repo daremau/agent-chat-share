@@ -8,8 +8,15 @@ pub enum AppEvent {
     Quit,
     CycleSourceNext,
     CycleSourcePrev,
-    OpenTargetPicker,
-    MoveCursor(i64),
+    /// Cycle the target agent (bound to Space).
+    CycleTarget,
+    /// Switch focus between the session list and the transcript (bound to Tab).
+    ToggleFocus,
+    /// Vertical nav: moves the session cursor or scrolls the transcript,
+    /// depending on which pane has focus. Positive is down.
+    NavVertical(i64),
+    /// Fast scroll the transcript; `1` is down, `-1` is up (Ctrl-D/Ctrl-U).
+    ScrollFast(i64),
     SelectSession,
     Reload,
     Share,
@@ -31,9 +38,14 @@ pub fn map(event: Event) -> Option<AppEvent> {
 }
 
 fn key(k: KeyEvent) -> Option<AppEvent> {
-    let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
-    if ctrl && k.code == KeyCode::Char('c') {
-        return Some(AppEvent::Quit);
+    // Ctrl chords take priority and never fall through to the plain-key table.
+    if k.modifiers.contains(KeyModifiers::CONTROL) {
+        return match k.code {
+            KeyCode::Char('c') => Some(AppEvent::Quit),
+            KeyCode::Char('d') => Some(AppEvent::ScrollFast(1)),
+            KeyCode::Char('u') => Some(AppEvent::ScrollFast(-1)),
+            _ => None,
+        };
     }
     match k.code {
         KeyCode::Char('q') => Some(AppEvent::Quit),
@@ -41,11 +53,12 @@ fn key(k: KeyEvent) -> Option<AppEvent> {
         KeyCode::Char('r') => Some(AppEvent::Reload),
         KeyCode::Char('s') => Some(AppEvent::Share),
         KeyCode::Char('e') => Some(AppEvent::Export),
-        KeyCode::Char('j') | KeyCode::Down => Some(AppEvent::MoveCursor(1)),
-        KeyCode::Char('k') | KeyCode::Up => Some(AppEvent::MoveCursor(-1)),
+        KeyCode::Char('j') | KeyCode::Down => Some(AppEvent::NavVertical(1)),
+        KeyCode::Char('k') | KeyCode::Up => Some(AppEvent::NavVertical(-1)),
         KeyCode::Left => Some(AppEvent::CycleSourcePrev),
         KeyCode::Right => Some(AppEvent::CycleSourceNext),
-        KeyCode::Tab => Some(AppEvent::OpenTargetPicker),
+        KeyCode::Tab => Some(AppEvent::ToggleFocus),
+        KeyCode::Char(' ') => Some(AppEvent::CycleTarget),
         KeyCode::Enter => Some(AppEvent::SelectSession),
         KeyCode::Esc => Some(AppEvent::DismissModal),
         _ => None,
@@ -78,16 +91,29 @@ mod tests {
     }
 
     #[test]
-    fn tab_picks_target() {
-        assert_eq!(map(k(KeyCode::Tab)), Some(AppEvent::OpenTargetPicker));
+    fn tab_toggles_focus() {
+        assert_eq!(map(k(KeyCode::Tab)), Some(AppEvent::ToggleFocus));
     }
 
     #[test]
-    fn arrows_and_jk_move_cursor() {
-        assert_eq!(map(k(KeyCode::Down)), Some(AppEvent::MoveCursor(1)));
-        assert_eq!(map(k(KeyCode::Up)), Some(AppEvent::MoveCursor(-1)));
-        assert_eq!(map(k(KeyCode::Char('j'))), Some(AppEvent::MoveCursor(1)));
-        assert_eq!(map(k(KeyCode::Char('k'))), Some(AppEvent::MoveCursor(-1)));
+    fn space_cycles_target() {
+        assert_eq!(map(k(KeyCode::Char(' '))), Some(AppEvent::CycleTarget));
+    }
+
+    #[test]
+    fn arrows_and_jk_nav_vertical() {
+        assert_eq!(map(k(KeyCode::Down)), Some(AppEvent::NavVertical(1)));
+        assert_eq!(map(k(KeyCode::Up)), Some(AppEvent::NavVertical(-1)));
+        assert_eq!(map(k(KeyCode::Char('j'))), Some(AppEvent::NavVertical(1)));
+        assert_eq!(map(k(KeyCode::Char('k'))), Some(AppEvent::NavVertical(-1)));
+    }
+
+    #[test]
+    fn ctrl_du_fast_scroll() {
+        let ctrl_d = Event::Key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        let ctrl_u = Event::Key(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL));
+        assert_eq!(map(ctrl_d), Some(AppEvent::ScrollFast(1)));
+        assert_eq!(map(ctrl_u), Some(AppEvent::ScrollFast(-1)));
     }
 
     #[test]

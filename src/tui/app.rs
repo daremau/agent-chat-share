@@ -38,6 +38,18 @@ pub enum ShouldExit {
     Yes,
 }
 
+/// Which pane the vertical-nav keys (↑/↓, j/k) act on. `Tab` toggles it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    /// Session list: vertical nav moves the selection cursor.
+    Sessions,
+    /// Transcript preview: vertical nav scrolls the text.
+    Transcript,
+}
+
+/// Lines moved per `Ctrl-U`/`Ctrl-D` fast scroll.
+const FAST_SCROLL_LINES: i64 = 15;
+
 #[derive(Debug, Clone)]
 pub struct App {
     pub source: String,
@@ -47,6 +59,11 @@ pub struct App {
     pub selected_session: Option<String>,
     pub transcript: Option<String>,
     pub transcript_chars: usize,
+    /// Number of lines in the loaded transcript; used to clamp `scroll`.
+    pub transcript_lines: u16,
+    /// Vertical scroll offset (in lines) of the transcript preview.
+    pub scroll: u16,
+    pub focus: Focus,
     pub screen: Screen,
     pub last_error: Option<String>,
 }
@@ -71,6 +88,9 @@ impl App {
             selected_session: None,
             transcript: None,
             transcript_chars: 0,
+            transcript_lines: 0,
+            scroll: 0,
+            focus: Focus::Sessions,
             screen: Screen::PickSource,
             last_error: None,
         };
@@ -116,7 +136,10 @@ impl App {
                 Ok(conv) => {
                     let text = render::render(&conv, &RenderOptions::default());
                     self.transcript_chars = text.chars().count();
+                    self.transcript_lines =
+                        text.lines().count().min(u16::MAX as usize) as u16;
                     self.transcript = Some(text);
+                    self.scroll = 0;
                     self.screen = Screen::Preview;
                     self.last_error = None;
                 }
@@ -191,10 +214,7 @@ impl App {
                 self.cycle_source(false);
                 self.load_sessions();
             }
-            AppEvent::OpenTargetPicker => {
-                // Surface the popover by stepping into Help-style transient
-                // screen. Concrete popover is rendered in the UI layer; for
-                // now we just toggle target through cycle logic.
+            AppEvent::CycleTarget => {
                 let idx = adapters::KNOWN_AGENTS
                     .iter()
                     .position(|a| *a == self.target)
@@ -202,17 +222,26 @@ impl App {
                 let n = adapters::KNOWN_AGENTS.len();
                 self.target = adapters::KNOWN_AGENTS[(idx + 1) % n].to_string();
             }
-            AppEvent::MoveCursor(delta) => {
-                if !self.sessions.is_empty() {
-                    let len = self.sessions.len();
-                    let cur = (self.cursor as i64 + delta).rem_euclid(len as i64) as usize;
-                    self.cursor = cur;
-                    // Show the newly highlighted session's transcript right away.
-                    self.load_preview();
-                }
+            AppEvent::ToggleFocus => {
+                self.focus = match self.focus {
+                    Focus::Sessions => Focus::Transcript,
+                    Focus::Transcript => Focus::Sessions,
+                };
+            }
+            // Vertical nav acts on whichever pane has focus.
+            AppEvent::NavVertical(delta) => match self.focus {
+                Focus::Sessions => self.move_cursor(delta),
+                Focus::Transcript => self.scroll_by(delta),
+            },
+            // Fast scroll always targets the transcript, regardless of focus.
+            AppEvent::ScrollFast(direction) => {
+                self.scroll_by(direction * FAST_SCROLL_LINES);
             }
             AppEvent::SelectSession => {
                 self.load_preview();
+                // Selecting a session is a "now let me read it" gesture, so
+                // hand focus to the transcript for immediate scrolling.
+                self.focus = Focus::Transcript;
             }
             AppEvent::Reload => {
                 self.load_sessions();
@@ -245,6 +274,23 @@ impl App {
         ShouldExit::No
     }
 
+    /// Move the session selection cursor and auto-preview the new session.
+    fn move_cursor(&mut self, delta: i64) {
+        if self.sessions.is_empty() {
+            return;
+        }
+        let len = self.sessions.len();
+        self.cursor = (self.cursor as i64 + delta).rem_euclid(len as i64) as usize;
+        // Show the newly highlighted session's transcript right away.
+        self.load_preview();
+    }
+
+    /// Scroll the transcript preview, clamped to `[0, transcript_lines]`.
+    fn scroll_by(&mut self, delta: i64) {
+        let max = self.transcript_lines as i64;
+        self.scroll = (self.scroll as i64 + delta).clamp(0, max) as u16;
+    }
+
     fn cycle_source(&mut self, forward: bool) {
         let idx = adapters::KNOWN_AGENTS
             .iter()
@@ -259,7 +305,10 @@ impl App {
         self.source = adapters::KNOWN_AGENTS[next].to_string();
         self.transcript = None;
         self.transcript_chars = 0;
+        self.transcript_lines = 0;
+        self.scroll = 0;
         self.selected_session = None;
+        self.focus = Focus::Sessions;
         self.screen = Screen::PickSession;
     }
 }
@@ -315,17 +364,19 @@ mod tests {
     }
 
     #[test]
-    fn move_cursor_with_empty_sessions_is_noop() {
+    fn nav_with_empty_sessions_is_noop() {
         let mut app = new_app();
         app.sessions.clear();
+        app.focus = Focus::Sessions;
         let cur = app.cursor;
-        app.update(AppEvent::MoveCursor(1));
+        app.update(AppEvent::NavVertical(1));
         assert_eq!(app.cursor, cur);
     }
 
     #[test]
-    fn move_cursor_wraps_in_synthetic_list() {
+    fn nav_wraps_cursor_when_sessions_focused() {
         let mut app = new_app();
+        app.focus = Focus::Sessions;
         app.sessions = vec![
             SessionRef {
                 id: "a".into(),
@@ -341,8 +392,51 @@ mod tests {
             },
         ];
         app.cursor = 1;
-        app.update(AppEvent::MoveCursor(1));
+        app.update(AppEvent::NavVertical(1));
         assert_eq!(app.cursor, 0);
+    }
+
+    #[test]
+    fn nav_scrolls_transcript_when_focused() {
+        let mut app = new_app();
+        app.focus = Focus::Transcript;
+        app.transcript_lines = 100;
+        app.cursor = 0;
+        app.update(AppEvent::NavVertical(1));
+        assert_eq!(app.scroll, 1);
+        // Cursor must not move while the transcript is focused.
+        assert_eq!(app.cursor, 0);
+    }
+
+    #[test]
+    fn scroll_clamps_to_bounds() {
+        let mut app = new_app();
+        app.focus = Focus::Transcript;
+        app.transcript_lines = 5;
+        app.update(AppEvent::ScrollFast(1)); // would overshoot
+        assert_eq!(app.scroll, 5);
+        app.update(AppEvent::ScrollFast(-1)); // would underflow past 0
+        assert_eq!(app.scroll, 0);
+    }
+
+    #[test]
+    fn toggle_focus_flips_pane() {
+        let mut app = new_app();
+        app.focus = Focus::Sessions;
+        app.update(AppEvent::ToggleFocus);
+        assert_eq!(app.focus, Focus::Transcript);
+        app.update(AppEvent::ToggleFocus);
+        assert_eq!(app.focus, Focus::Sessions);
+    }
+
+    #[test]
+    fn cycle_target_advances() {
+        let mut app = new_app();
+        let start = app.target.clone();
+        app.update(AppEvent::CycleTarget);
+        if adapters::KNOWN_AGENTS.len() > 1 {
+            assert_ne!(app.target, start);
+        }
     }
 
     #[test]
