@@ -37,6 +37,9 @@ acs export --agent claude --format json --out chat.json
 acs share --from claude --to codex
 acs share --from codex --to claude
 acs share --from opencode --to codex
+
+# Browse sessions and share/export interactively
+acs tui
 ```
 
 `share` writes a transcript file and prints a seed command, e.g.:
@@ -53,6 +56,36 @@ Run that command to continue the conversation in the target agent.
 Session selection: with no `--session`, `acs` uses the current session — for
 Claude Code it reads `$CLAUDE_CODE_SESSION_ID`, otherwise it picks the most
 recently updated session for the current directory. Use `acs list` to find ids.
+
+## Interactive TUI
+
+`acs tui` opens a terminal UI for browsing an agent's sessions, previewing the
+transcript, and running the same `share`/`export` pipelines without retyping
+flags. The selected session's transcript is previewed automatically. As with the
+CLI, the TUI never launches the target agent — sharing produces a transcript and
+a seed command you copy and run yourself.
+
+Two panes: a session list on the left and a transcript preview on the right.
+`Tab` switches which pane is focused (the focused pane has a highlighted border).
+
+| Key | Action |
+|-----|--------|
+| `←` / `→` | Cycle the source agent |
+| `Space` | Cycle the target agent |
+| `Tab` | Switch focus between the session list and the transcript |
+| `↑` / `↓` or `j` / `k` | Focused pane: move the session cursor, or scroll the transcript |
+| `Ctrl-U` / `Ctrl-D` | Fast-scroll the transcript (from either pane) |
+| `Enter` | Open the highlighted session and focus the transcript |
+| `s` | Share — write a transcript and show the seed command |
+| `e` | Export — write the transcript or JSON to a path |
+| `c` | Copy the open modal's command/path to the clipboard |
+| `r` | Reload the session list |
+| `?` | Toggle help |
+| `q` / `Ctrl-C` | Quit |
+| `Esc` | Dismiss the current modal |
+
+Clipboard copy shells out to the first available tool: `wl-copy`, `xclip`,
+`xsel`, or `pbcopy`. If none are installed, the status line reports the failure.
 
 ## Skills
 
@@ -73,6 +106,7 @@ acs skills uninstall
 - **Read sources:** Claude Code JSONL sessions, Codex rollout JSONL sessions,
   and OpenCode's SQLite session database.
 - **Seed targets:** Claude Code, Codex, and OpenCode initial-prompt commands.
+- **Interfaces:** one-shot CLI subcommands and an interactive TUI (`acs tui`).
 - OpenCode read support expects the `sqlite3` CLI to be available.
 
 ## Development
