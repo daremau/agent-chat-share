@@ -14,7 +14,6 @@ use std::io::{self, IsTerminal};
 
 use anyhow::Result;
 use crossterm::cursor::Show;
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -24,32 +23,23 @@ use ratatui::Terminal;
 
 use crate::tui::app::{App, ShouldExit};
 
-/// Restores the terminal to its prior state. Runs on `Drop`, so it covers
-/// normal quit, early `?` returns, and panicking unwinds.
-struct TuiGuard {
-    armed: bool,
-}
+/// Restores the terminal to its prior state on `Drop`, so it covers every
+/// exit path: normal quit, early `?` returns, and panicking unwinds.
+struct TuiGuard;
 
 impl TuiGuard {
     fn new() -> Result<Self> {
         enable_raw_mode()?;
         let mut out = io::stdout();
-        execute!(out, EnterAlternateScreen, EnableMouseCapture,)?;
-        Ok(Self { armed: true })
-    }
-
-    fn disarm(mut self) {
-        self.armed = false;
+        execute!(out, EnterAlternateScreen)?;
+        Ok(Self)
     }
 }
 
 impl Drop for TuiGuard {
     fn drop(&mut self) {
-        if !self.armed {
-            return;
-        }
         let mut out = io::stdout();
-        let _ = execute!(out, DisableMouseCapture, LeaveAlternateScreen, Show,);
+        let _ = execute!(out, LeaveAlternateScreen, Show);
         let _ = disable_raw_mode();
     }
 }
@@ -60,15 +50,14 @@ pub fn run() -> Result<()> {
         anyhow::bail!("acs tui requires an interactive terminal (stdout is not a TTY)");
     }
 
-    let guard = TuiGuard::new()?;
+    let _guard = TuiGuard::new()?;
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new();
-    let result = event_loop(&mut terminal, &mut app);
-
-    guard.disarm();
-    result
+    // `_guard` restores the terminal when it drops at the end of this scope,
+    // regardless of whether the loop returns Ok or an error.
+    event_loop(&mut terminal, &mut app)
 }
 
 fn event_loop<B: ratatui::backend::Backend>(

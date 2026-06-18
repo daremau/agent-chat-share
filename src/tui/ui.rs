@@ -121,8 +121,7 @@ fn draw_preview(f: &mut Frame, area: Rect, app: &App) {
     };
     let p = Paragraph::new(body)
         .block(Block::default().borders(Borders::ALL).title("Transcript"))
-        .wrap(Wrap { trim: false })
-        .scroll((app.cursor as u16, 0));
+        .wrap(Wrap { trim: false });
     f.render_widget(p, area);
 }
 
