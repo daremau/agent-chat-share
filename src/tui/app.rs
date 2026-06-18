@@ -317,7 +317,7 @@ impl App {
             AppEvent::DismissModal => {
                 if matches!(
                     self.screen,
-                    Screen::ShareModal(_) | Screen::ExportModal { .. }
+                    Screen::ShareModal(_) | Screen::ExportModal { .. } | Screen::Help
                 ) {
                     self.screen = Screen::Preview;
                 }
@@ -522,6 +522,14 @@ mod tests {
         app.update(AppEvent::ToggleHelp);
         assert!(matches!(app.screen, Screen::Help));
         app.update(AppEvent::ToggleHelp);
+        assert!(matches!(app.screen, Screen::Preview));
+    }
+
+    #[test]
+    fn dismiss_modal_closes_help() {
+        let mut app = new_app();
+        app.screen = Screen::Help;
+        app.update(AppEvent::DismissModal);
         assert!(matches!(app.screen, Screen::Preview));
     }
 
