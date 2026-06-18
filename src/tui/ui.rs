@@ -105,7 +105,7 @@ fn draw_sidebar(f: &mut Frame, area: Rect, app: &App) {
                 let summary = if s.summary.is_empty() {
                     "(no summary)".to_string()
                 } else {
-                    s.summary.clone()
+                    crate::tui::app::sanitize_for_display(&s.summary)
                 };
                 ListItem::new(Line::from(vec![
                     Span::styled(format!("{}  ", truncate(&s.id, 10)), style),

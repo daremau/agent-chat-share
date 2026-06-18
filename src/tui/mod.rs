@@ -54,6 +54,9 @@ pub fn run() -> Result<()> {
     let _guard = TuiGuard::new()?;
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
+    // Start from a known-blank screen so ratatui's buffer is in sync with the
+    // terminal from the first frame.
+    terminal.clear()?;
 
     let mut app = App::new();
     // `_guard` restores the terminal when it drops at the end of this scope,

@@ -51,6 +51,58 @@ pub enum Focus {
 /// Lines moved per `Ctrl-U`/`Ctrl-D` fast scroll.
 const FAST_SCROLL_LINES: i64 = 15;
 
+/// Strip ANSI escape sequences and control characters from text before it is
+/// handed to the renderer. Session transcripts can embed raw escape sequences
+/// (e.g. ANSI-colored tool output). If ratatui emits those verbatim the
+/// terminal executes them, moving the cursor and leaving "ghost" glyphs that
+/// never get repainted. Newlines are preserved; tabs become single spaces;
+/// every other C0/C1 control byte and DEL is dropped.
+pub(crate) fn sanitize_for_display(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\u{1b}' => match chars.peek() {
+                // CSI: ESC [ … final byte in 0x40–0x7e (e.g. color codes).
+                Some('[') => {
+                    chars.next();
+                    while let Some(&n) = chars.peek() {
+                        chars.next();
+                        if ('\u{40}'..='\u{7e}').contains(&n) {
+                            break;
+                        }
+                    }
+                }
+                // OSC: ESC ] … terminated by BEL or ST (ESC \).
+                Some(']') => {
+                    chars.next();
+                    while let Some(&n) = chars.peek() {
+                        if n == '\u{7}' {
+                            chars.next();
+                            break;
+                        }
+                        if n == '\u{1b}' {
+                            chars.next();
+                            if matches!(chars.peek(), Some('\\')) {
+                                chars.next();
+                            }
+                            break;
+                        }
+                        chars.next();
+                    }
+                }
+                // Lone ESC or other escape: drop just the ESC.
+                _ => {}
+            },
+            '\n' => out.push('\n'),
+            '\t' => out.push(' '),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 #[derive(Debug, Clone)]
 pub struct App {
     pub source: String,
@@ -135,7 +187,8 @@ impl App {
         match adapters::get(&self.source) {
             Ok(adapter) => match adapter.read(Some(&session.id), &Scope::default()) {
                 Ok(conv) => {
-                    let text = render::render(&conv, &RenderOptions::default());
+                    let text =
+                        sanitize_for_display(&render::render(&conv, &RenderOptions::default()));
                     self.transcript_chars = text.chars().count();
                     self.transcript_lines =
                         text.lines().count().min(u16::MAX as usize) as u16;
@@ -502,6 +555,26 @@ mod tests {
         app.last_error = None;
         app.update(AppEvent::CopySeed);
         assert!(app.last_error.is_none());
+    }
+
+    #[test]
+    fn sanitize_strips_ansi_and_controls() {
+        // Color codes, a cursor move, a NUL, and a tab.
+        let raw = "a\u{1b}[31mred\u{1b}[0m\tb\u{1b}[2Jc\0d";
+        assert_eq!(sanitize_for_display(raw), "ared bcd");
+    }
+
+    #[test]
+    fn sanitize_keeps_newlines_and_plain_text() {
+        let raw = "line one\nline two";
+        assert_eq!(sanitize_for_display(raw), "line one\nline two");
+    }
+
+    #[test]
+    fn sanitize_drops_osc_sequence() {
+        // OSC set-title terminated by BEL must vanish, surrounding text stays.
+        let raw = "x\u{1b}]0;title\u{7}y";
+        assert_eq!(sanitize_for_display(raw), "xy");
     }
 
     #[test]
