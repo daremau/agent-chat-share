@@ -6,4 +6,6 @@ pub mod adapters;
 pub mod cli;
 pub mod model;
 pub mod render;
+pub mod share;
 pub mod skills;
+pub mod tui;

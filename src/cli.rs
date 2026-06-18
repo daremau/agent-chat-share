@@ -1,13 +1,15 @@
-//! Command-line interface: `list`, `export`, `share`, and `skills install|uninstall`.
+//! Command-line interface: `list`, `export`, `share`, `tui`, and
+//! `skills install|uninstall`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::adapters::{self, Scope};
-use crate::render::{self, RenderOptions};
+use crate::share::{self, ExportFormat};
 use crate::skills;
+use crate::tui;
 
 #[derive(Parser)]
 #[command(
@@ -54,6 +56,8 @@ enum Command {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Open the interactive terminal UI.
+    Tui,
     /// Install or remove the agent-chat-share skill.
     Skills {
         #[command(subcommand)]
@@ -122,6 +126,7 @@ fn dispatch(cli: Cli) -> Result<()> {
             session,
             out,
         } => cmd_share(&from, &to, session.as_deref(), out),
+        Command::Tui => tui::run(),
         Command::Skills { action } => cmd_skills(action),
     }
 }
@@ -166,77 +171,25 @@ fn cmd_export(
     format: Format,
     out: Option<PathBuf>,
 ) -> Result<()> {
-    let adapter = adapters::get(agent)?;
-    let scope = Scope::default();
-    let conv = adapter.read(session, &scope)?;
-
-    let content = match format {
-        Format::Transcript => render::render(&conv, &RenderOptions::default()),
-        Format::Json => conv.to_json()?,
+    let shared_format = match format {
+        Format::Transcript => ExportFormat::Transcript,
+        Format::Json => ExportFormat::Json,
     };
-
-    match out {
-        Some(path) => {
-            std::fs::write(&path, content)?;
-            println!("Wrote {}", path.display());
-        }
-        None => print!("{content}"),
+    if let Some(path) = share::export(agent, session, shared_format, out)? {
+        println!("Wrote {}", path.display());
     }
     Ok(())
 }
 
 fn cmd_share(from: &str, to: &str, session: Option<&str>, out: Option<PathBuf>) -> Result<()> {
-    // Resolve both adapters and validate roles BEFORE doing any work, so an
-    // unsupported direction writes nothing and emits no command.
-    let source = adapters::get(from)?;
-    let target = adapters::get(to)?;
-
-    if !source.roles().read {
-        return Err(adapters::Error::Unsupported {
-            agent: from.to_string(),
-            role: "read",
-        }
-        .into());
-    }
-    if !target.roles().seed {
-        return Err(adapters::Error::Unsupported {
-            agent: to.to_string(),
-            role: "seed",
-        }
-        .into());
-    }
-
-    let scope = Scope::default();
-    let conv = source.read(session, &scope)?;
-    let transcript = render::render(&conv, &RenderOptions::default());
-
-    let out_path = out.unwrap_or_else(|| default_share_out_path(&conv.metadata.id));
-    ensure_parent_dir(&out_path)?;
-    std::fs::write(&out_path, &transcript)?;
-
-    let seed = target.seed_command(&out_path)?;
-
+    let result = share::run(from, to, session, out)?;
     println!(
         "Wrote {} ({} turns)",
-        out_path.display(),
-        conv.messages.len()
+        result.transcript_path.display(),
+        result.message_count
     );
     println!("Run this to continue in {to}:\n");
-    println!("  {}", seed.shell);
-    Ok(())
-}
-
-fn default_share_out_path(session_id: &str) -> PathBuf {
-    PathBuf::from(".agents")
-        .join("acs")
-        .join("transcripts")
-        .join(format!("shared-chat-{session_id}.md"))
-}
-
-fn ensure_parent_dir(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(parent)?;
-    }
+    println!("  {}", result.seed_shell);
     Ok(())
 }
 
@@ -285,14 +238,8 @@ fn cmd_skills(action: SkillsAction) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::default_share_out_path;
-    use std::path::PathBuf;
-
-    #[test]
-    fn default_share_output_goes_under_agent_state() {
-        assert_eq!(
-            default_share_out_path("abc123"),
-            PathBuf::from(".agents/acs/transcripts/shared-chat-abc123.md")
-        );
-    }
+    // default_share_out_path coverage lives next to the helper in
+    // crate::share. Keeping the test here would require re-exporting a
+    // private function, so we just keep this module as a placeholder for
+    // future CLI-shape tests.
 }
