@@ -22,6 +22,8 @@ pub enum AppEvent {
     Share,
     Export,
     ConfirmExport,
+    /// Copy the active modal's command/path to the system clipboard.
+    CopySeed,
     DismissModal,
     ToggleHelp,
     ClearError,
@@ -53,6 +55,7 @@ fn key(k: KeyEvent) -> Option<AppEvent> {
         KeyCode::Char('r') => Some(AppEvent::Reload),
         KeyCode::Char('s') => Some(AppEvent::Share),
         KeyCode::Char('e') => Some(AppEvent::Export),
+        KeyCode::Char('c') => Some(AppEvent::CopySeed),
         KeyCode::Char('j') | KeyCode::Down => Some(AppEvent::NavVertical(1)),
         KeyCode::Char('k') | KeyCode::Up => Some(AppEvent::NavVertical(-1)),
         KeyCode::Left => Some(AppEvent::CycleSourcePrev),
@@ -128,6 +131,11 @@ mod tests {
         assert_eq!(map(k(KeyCode::Char('s'))), Some(AppEvent::Share));
         assert_eq!(map(k(KeyCode::Char('e'))), Some(AppEvent::Export));
         assert_eq!(map(k(KeyCode::Char('r'))), Some(AppEvent::Reload));
+    }
+
+    #[test]
+    fn c_copies_seed() {
+        assert_eq!(map(k(KeyCode::Char('c'))), Some(AppEvent::CopySeed));
     }
 
     #[test]

@@ -179,6 +179,7 @@ Ctrl-D/U   fast scroll transcript (any focus)
 Enter      open session and focus the transcript
 s          share (writes transcript, shows seed command)
 e          export (writes transcript or JSON to a path)
+c          copy the open modal's command/path to clipboard
 r          reload session list
 ?          toggle this help
 q / Ctrl-C quit
@@ -194,9 +195,9 @@ seed command and run it yourself in a real terminal.";
 fn draw_share_modal(f: &mut Frame, area: Rect, result: &crate::share::ShareResult) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Share · press Enter or Esc to close");
+        .title("Share · c copy command · Enter/Esc close");
     let body = format!(
-        "Wrote {} ({} turns)\n\nRun this to continue:\n\n  {}\n",
+        "Wrote {} ({} turns)\n\nRun this to continue (press c to copy):\n\n{}\n",
         result.transcript_path.display(),
         result.message_count,
         result.seed_shell,
@@ -215,7 +216,7 @@ fn draw_export_modal(
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Export · Enter to write · Esc to cancel");
+        .title("Export · Enter write · c copy path · Esc cancel");
     let fmt = match format {
         crate::share::ExportFormat::Transcript => "transcript",
         crate::share::ExportFormat::Json => "json",

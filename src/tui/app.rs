@@ -7,6 +7,7 @@ use crate::adapters::{self, Scope, SessionRef};
 use crate::model::Conversation;
 use crate::render::{self, RenderOptions};
 use crate::share::{self, ExportFormat, ShareResult};
+use crate::tui::clipboard;
 use crate::tui::events::AppEvent;
 
 /// TUI screen state. The reducer transitions between these.
@@ -253,6 +254,7 @@ impl App {
                 self.open_export_modal();
             }
             AppEvent::ConfirmExport => self.confirm_export(),
+            AppEvent::CopySeed => self.copy_active_command(),
             AppEvent::DismissModal => {
                 if matches!(
                     self.screen,
@@ -272,6 +274,21 @@ impl App {
             }
         }
         ShouldExit::No
+    }
+
+    /// Copy the active modal's payload to the clipboard: the seed command in
+    /// a `ShareModal`, or the output path in an `ExportModal`. Does nothing on
+    /// other screens. Success and failure are both surfaced in the status line.
+    fn copy_active_command(&mut self) {
+        let text = match &self.screen {
+            Screen::ShareModal(result) => result.seed_shell.clone(),
+            Screen::ExportModal { out, .. } => out.display().to_string(),
+            _ => return,
+        };
+        match clipboard::copy(&text) {
+            Ok(tool) => self.last_error = Some(format!("copied to clipboard ({tool})")),
+            Err(e) => self.last_error = Some(format!("copy failed: {e}")),
+        }
     }
 
     /// Move the session selection cursor and auto-preview the new session.
@@ -475,6 +492,16 @@ mod tests {
         });
         app.update(AppEvent::DismissModal);
         assert!(matches!(app.screen, Screen::Preview));
+    }
+
+    #[test]
+    fn copy_seed_outside_modal_is_noop() {
+        // No modal open: copy must not spawn anything or set a status.
+        let mut app = new_app();
+        app.screen = Screen::Preview;
+        app.last_error = None;
+        app.update(AppEvent::CopySeed);
+        assert!(app.last_error.is_none());
     }
 
     #[test]

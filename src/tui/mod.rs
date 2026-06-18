@@ -7,6 +7,7 @@
 //! - `ui`: `ratatui` rendering.
 
 pub mod app;
+pub mod clipboard;
 pub mod events;
 pub mod ui;
 
