@@ -292,10 +292,16 @@ impl App {
                 self.scroll_by(direction * FAST_SCROLL_LINES);
             }
             AppEvent::SelectSession => {
-                self.load_preview();
-                // Selecting a session is a "now let me read it" gesture, so
-                // hand focus to the transcript for immediate scrolling.
-                self.focus = Focus::Transcript;
+                // Enter is context-sensitive: in the export modal it confirms
+                // the write; otherwise it selects the highlighted session.
+                if matches!(self.screen, Screen::ExportModal { .. }) {
+                    self.confirm_export();
+                } else {
+                    self.load_preview();
+                    // Selecting a session is a "now let me read it" gesture, so
+                    // hand focus to the transcript for immediate scrolling.
+                    self.focus = Focus::Transcript;
+                }
             }
             AppEvent::Reload => {
                 self.load_sessions();
