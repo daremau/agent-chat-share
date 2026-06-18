@@ -98,6 +98,11 @@ impl App {
             },
             Err(e) => self.last_error = Some(format!("adapter failed: {e}")),
         }
+        // Auto-preview the first session so the transcript is visible without
+        // an explicit Enter.
+        if !self.sessions.is_empty() {
+            self.load_preview();
+        }
     }
 
     /// Load the currently highlighted session into the preview pane.
@@ -202,6 +207,8 @@ impl App {
                     let len = self.sessions.len();
                     let cur = (self.cursor as i64 + delta).rem_euclid(len as i64) as usize;
                     self.cursor = cur;
+                    // Show the newly highlighted session's transcript right away.
+                    self.load_preview();
                 }
             }
             AppEvent::SelectSession => {
