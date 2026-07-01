@@ -13,9 +13,6 @@ use chrono::{DateTime, Utc};
 use super::{Adapter, Error, Result, Roles, Scope, SeedCommand, SessionRef};
 use crate::model::{Block, Conversation, Message, Metadata, Role};
 
-/// Prompt prefix that tells Codex to continue the attached transcript.
-const SEED_PREFIX: &str =
-    "Continue this prior conversation from another coding assistant. Pick up where it left off. Transcript follows:";
 /// Environment override for the Codex home directory (testing).
 const ENV_HOME: &str = "ACS_CODEX_HOME";
 
@@ -118,22 +115,11 @@ impl Adapter for CodexAdapter {
     }
 
     fn seed_command(&self, transcript: &Path) -> Result<SeedCommand> {
-        let shell = build_seed_shell(transcript);
         Ok(SeedCommand {
             program: "codex".to_string(),
-            shell,
+            shell: super::seed_shell("codex", transcript),
         })
     }
-}
-
-/// Build the shell line that starts Codex with the transcript inlined via
-/// `$(cat …)`, so the (potentially large) transcript is not baked into argv.
-fn build_seed_shell(transcript: &Path) -> String {
-    // Single-quote the path for `cat`; embed in a double-quoted prompt so the
-    // command substitution expands at run time.
-    let path = transcript.display().to_string();
-    let quoted_path = format!("'{}'", path.replace('\'', r"'\''"));
-    format!("codex \"{SEED_PREFIX} $(cat {quoted_path})\"")
 }
 
 fn cwd_matches(session_cwd: Option<&str>, cwd: &str) -> bool {
@@ -410,7 +396,8 @@ mod tests {
         assert_eq!(cmd.program, "codex");
         assert!(cmd.shell.starts_with("codex "));
         assert!(cmd.shell.contains("/tmp/shared-chat.md"));
-        assert!(cmd.shell.contains("$(cat"));
+        // Transcript is referenced by path, never inlined into argv.
+        assert!(!cmd.shell.contains("$(cat"));
     }
 
     #[test]

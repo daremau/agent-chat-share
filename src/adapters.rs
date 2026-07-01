@@ -63,6 +63,31 @@ pub struct SeedCommand {
     pub shell: String,
 }
 
+/// Shared wording for every target's seed command. The transcript is referenced
+/// by *path*, not inlined: an earlier design pasted the whole file into argv via
+/// `$(cat …)`, which overflows the kernel's `ARG_MAX` on long conversations
+/// (`bash: … Argument list too long`). Since every target is itself a coding
+/// agent with file-read tools, we instead ask it to open the file, which keeps
+/// argv tiny regardless of transcript size.
+const SEED_PREFIX: &str =
+    "Continue this prior conversation from another coding assistant. Pick up where it left off. Read the transcript at";
+
+/// Build a seed shell line of the form `<invocation> '<prompt>'`, where the
+/// prompt references `transcript` by path and the whole prompt is POSIX
+/// single-quoted as one argument. `invocation` is the program plus any flags
+/// (e.g. `"opencode --prompt"`).
+pub fn seed_shell(invocation: &str, transcript: &Path) -> String {
+    let path = transcript.display().to_string();
+    let prompt = format!("{SEED_PREFIX} {path}, then continue from where it left off.");
+    format!("{invocation} {}", single_quote(&prompt))
+}
+
+/// POSIX single-quote a string so it is safe as a single shell word, even if it
+/// contains spaces or quotes.
+fn single_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
 /// Typed adapter errors. `Unsupported` and `UnknownAgent` are matched by the CLI
 /// to produce clear messages and non-zero exit codes; incidental I/O and parse
 /// failures are carried via `Other`.

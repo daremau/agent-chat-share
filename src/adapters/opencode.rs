@@ -16,9 +16,6 @@ use crate::model::{default_timestamp, Block, Conversation, Message, Metadata, Ro
 
 /// Environment override for the OpenCode home directory (testing).
 const ENV_HOME: &str = "ACS_OPENCODE_HOME";
-/// Prompt prefix that tells OpenCode to continue the attached transcript.
-const SEED_PREFIX: &str =
-    "Continue this prior conversation from another coding assistant. Pick up where it left off. Transcript follows:";
 
 pub struct OpenCodeAdapter {
     /// OpenCode data directory (`~/.local/share/opencode` by default).
@@ -124,15 +121,9 @@ impl Adapter for OpenCodeAdapter {
     fn seed_command(&self, transcript: &Path) -> Result<SeedCommand> {
         Ok(SeedCommand {
             program: "opencode".to_string(),
-            shell: build_seed_shell(transcript),
+            shell: super::seed_shell("opencode --prompt", transcript),
         })
     }
-}
-
-fn build_seed_shell(transcript: &Path) -> String {
-    let path = transcript.display().to_string();
-    let quoted_path = format!("'{}'", path.replace('\'', r"'\''"));
-    format!("opencode --prompt \"{SEED_PREFIX} $(cat {quoted_path})\"")
 }
 
 #[derive(Debug, Deserialize)]
@@ -324,7 +315,8 @@ mod tests {
         assert!(cmd.shell.starts_with("opencode "));
         assert!(cmd.shell.contains("--prompt"));
         assert!(cmd.shell.contains("/tmp/shared-chat.md"));
-        assert!(cmd.shell.contains("$(cat"));
+        // Transcript is referenced by path, never inlined into argv.
+        assert!(!cmd.shell.contains("$(cat"));
     }
 
     #[test]

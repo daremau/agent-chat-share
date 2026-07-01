@@ -48,7 +48,7 @@ acs tui
 Wrote .agents/acs/transcripts/shared-chat-<id>.md (42 turns)
 Run this to continue in codex:
 
-  codex "Continue this prior conversation… $(cat '.agents/acs/transcripts/shared-chat-<id>.md')"
+  codex 'Continue this prior conversation… Read the transcript at .agents/acs/transcripts/shared-chat-<id>.md, then continue from where it left off.'
 ```
 
 Run that command to continue the conversation in the target agent.

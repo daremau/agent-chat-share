@@ -15,9 +15,6 @@ use crate::model::{Block, Conversation, Message, Metadata, Role};
 const ENV_SESSION: &str = "CLAUDE_CODE_SESSION_ID";
 /// Environment override for the Claude home directory (testing).
 const ENV_HOME: &str = "ACS_CLAUDE_HOME";
-/// Prompt prefix that tells Claude to continue the attached transcript.
-const SEED_PREFIX: &str =
-    "Continue this prior conversation from another coding assistant. Pick up where it left off. Transcript follows:";
 
 pub struct ClaudeAdapter {
     /// Claude home directory (`~/.claude` by default).
@@ -142,15 +139,9 @@ impl Adapter for ClaudeAdapter {
     fn seed_command(&self, transcript: &Path) -> Result<SeedCommand> {
         Ok(SeedCommand {
             program: "claude".to_string(),
-            shell: build_seed_shell(transcript),
+            shell: super::seed_shell("claude", transcript),
         })
     }
-}
-
-fn build_seed_shell(transcript: &Path) -> String {
-    let path = transcript.display().to_string();
-    let quoted_path = format!("'{}'", path.replace('\'', r"'\''"));
-    format!("claude \"{SEED_PREFIX} $(cat {quoted_path})\"")
 }
 
 fn newest_id(adapter: &ClaudeAdapter, scope: &Scope) -> Result<String> {
@@ -406,6 +397,7 @@ mod tests {
         assert_eq!(cmd.program, "claude");
         assert!(cmd.shell.starts_with("claude "));
         assert!(cmd.shell.contains("/tmp/x.md"));
-        assert!(cmd.shell.contains("$(cat"));
+        // Transcript is referenced by path, never inlined into argv.
+        assert!(!cmd.shell.contains("$(cat"));
     }
 }
