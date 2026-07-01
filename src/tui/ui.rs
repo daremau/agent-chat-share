@@ -124,31 +124,81 @@ fn draw_sidebar(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_preview(f: &mut Frame, area: Rect, app: &App) {
-    let body = match &app.transcript {
-        Some(t) => t.clone(),
-        None => match app.screen {
-            Screen::PickSource => {
-                "Use ←/→ to pick a source agent, then press → to continue.".to_string()
-            }
-            _ => "Pick a session and press Enter to preview.".to_string(),
-        },
-    };
     let focused = matches!(app.focus, Focus::Transcript);
     let title = if app.transcript.is_some() && app.transcript_lines > 0 {
         format!("Transcript · line {}/{}", app.scroll, app.transcript_lines)
     } else {
         "Transcript".to_string()
     };
-    let p = Paragraph::new(body)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(border_style(focused)),
-        )
-        .wrap(Wrap { trim: false })
-        .scroll((app.scroll, 0));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(border_style(focused));
+
+    // Body text. For a loaded transcript we render only the visible window of
+    // lines (`visible_slice`) rather than the whole thing: the previous code
+    // cloned and re-wrapped the entire transcript every frame, which made a
+    // large session sluggish to scroll. `visible_slice` borrows a subslice, so
+    // there is no per-frame allocation and ratatui only lays out one screenful.
+    let body: &str = match &app.transcript {
+        Some(t) => {
+            let inner_height = area.height.saturating_sub(2) as usize; // minus borders
+            visible_slice(t, app.scroll as usize, inner_height)
+        }
+        None => match app.screen {
+            Screen::PickSource => "Use ←/→ to pick a source agent, then press → to continue.",
+            _ => "Pick a session and press Enter to preview.",
+        },
+    };
+
+    // The slice already starts at the scroll offset, so no `.scroll()` here.
+    let p = Paragraph::new(body).block(block).wrap(Wrap { trim: false });
     f.render_widget(p, area);
+}
+
+/// Borrow the window of `text` spanning `count` newline-separated lines starting
+/// at line `start` (0-indexed). Returns a subslice with no allocation. Used to
+/// keep transcript rendering O(viewport) instead of O(transcript).
+fn visible_slice(text: &str, start: usize, count: usize) -> &str {
+    if count == 0 {
+        return "";
+    }
+    let bytes = text.as_bytes();
+
+    // Byte offset where line `start` begins.
+    let mut begin = 0;
+    if start > 0 {
+        let mut seen = 0;
+        let mut found = false;
+        for (i, &b) in bytes.iter().enumerate() {
+            if b == b'\n' {
+                seen += 1;
+                if seen == start {
+                    begin = i + 1;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if !found {
+            return ""; // scrolled past the end
+        }
+    }
+
+    // Byte offset where the window ends: start of line `start + count`, minus
+    // the trailing newline (or end of text if there are fewer lines).
+    let mut end = text.len();
+    let mut seen = 0;
+    for (i, &b) in bytes[begin..].iter().enumerate() {
+        if b == b'\n' {
+            seen += 1;
+            if seen == count {
+                end = begin + i;
+                break;
+            }
+        }
+    }
+    &text[begin..end]
 }
 
 fn draw_status(f: &mut Frame, area: Rect, app: &App) {
@@ -261,4 +311,39 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(pop_y[1])[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::visible_slice;
+
+    #[test]
+    fn window_from_top() {
+        let text = "l0\nl1\nl2\nl3\nl4";
+        assert_eq!(visible_slice(text, 0, 3), "l0\nl1\nl2");
+    }
+
+    #[test]
+    fn window_offset_into_middle() {
+        let text = "l0\nl1\nl2\nl3\nl4";
+        assert_eq!(visible_slice(text, 2, 2), "l2\nl3");
+    }
+
+    #[test]
+    fn window_past_end_is_clamped_to_remaining() {
+        let text = "l0\nl1\nl2";
+        // Asking for more lines than remain returns what's left, no panic.
+        assert_eq!(visible_slice(text, 1, 10), "l1\nl2");
+    }
+
+    #[test]
+    fn start_beyond_end_is_empty() {
+        let text = "l0\nl1";
+        assert_eq!(visible_slice(text, 9, 5), "");
+    }
+
+    #[test]
+    fn zero_count_is_empty() {
+        assert_eq!(visible_slice("a\nb", 0, 0), "");
+    }
 }

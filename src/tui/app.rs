@@ -1,6 +1,7 @@
 //! `App` — pure state and reducer for the TUI. No terminal or async
 //! dependencies; everything is `#[cfg(test)]`-friendly.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::adapters::{self, Scope, SessionRef};
@@ -119,6 +120,11 @@ pub struct App {
     pub focus: Focus,
     pub screen: Screen,
     pub last_error: Option<String>,
+    /// Rendered-transcript cache keyed by session id, so navigating the session
+    /// list (which auto-previews) doesn't re-read + re-render a session that was
+    /// already loaded. Cleared when the session set changes (reload / source
+    /// switch). Value is `(sanitized_text, char_count, line_count)`.
+    preview_cache: HashMap<String, (String, usize, u16)>,
 }
 
 impl App {
@@ -146,6 +152,7 @@ impl App {
             focus: Focus::Sessions,
             screen: Screen::PickSource,
             last_error: None,
+            preview_cache: HashMap::new(),
         };
         app.load_sessions();
         app
@@ -164,6 +171,9 @@ impl App {
     pub fn load_sessions(&mut self) {
         self.sessions.clear();
         self.cursor = 0;
+        // The session set is being re-discovered; drop any stale rendered
+        // transcripts so a reloaded session is re-read fresh.
+        self.preview_cache.clear();
         match adapters::get(&self.source) {
             Ok(adapter) => match adapter.discover(&Scope::default()) {
                 Ok(s) => self.sessions = s,
@@ -184,14 +194,31 @@ impl App {
             return;
         };
         self.selected_session = Some(session.id.clone());
+
+        // Serve from cache when this session was already rendered — this is what
+        // keeps list navigation snappy instead of re-reading + re-rendering the
+        // whole transcript on every cursor move.
+        if let Some((text, chars, lines)) = self.preview_cache.get(&session.id) {
+            self.transcript_chars = *chars;
+            self.transcript_lines = *lines;
+            self.transcript = Some(text.clone());
+            self.scroll = 0;
+            self.screen = Screen::Preview;
+            self.last_error = None;
+            return;
+        }
+
         match adapters::get(&self.source) {
             Ok(adapter) => match adapter.read(Some(&session.id), &Scope::default()) {
                 Ok(conv) => {
                     let text =
                         sanitize_for_display(&render::render(&conv, &RenderOptions::default()));
-                    self.transcript_chars = text.chars().count();
-                    self.transcript_lines =
-                        text.lines().count().min(u16::MAX as usize) as u16;
+                    let chars = text.chars().count();
+                    let lines = text.lines().count().min(u16::MAX as usize) as u16;
+                    self.preview_cache
+                        .insert(session.id.clone(), (text.clone(), chars, lines));
+                    self.transcript_chars = chars;
+                    self.transcript_lines = lines;
                     self.transcript = Some(text);
                     self.scroll = 0;
                     self.screen = Screen::Preview;
@@ -591,6 +618,31 @@ mod tests {
         // OSC set-title terminated by BEL must vanish, surrounding text stays.
         let raw = "x\u{1b}]0;title\u{7}y";
         assert_eq!(sanitize_for_display(raw), "xy");
+    }
+
+    #[test]
+    fn load_preview_serves_cached_transcript_without_adapter() {
+        let mut app = new_app();
+        app.sessions = vec![SessionRef {
+            id: "cached".into(),
+            summary: "s".into(),
+            updated_at: chrono::Utc::now(),
+            message_count: 1,
+        }];
+        app.cursor = 0;
+        // An invalid source would make a real read fail; the cache must be used
+        // before any adapter lookup, so this stays error-free.
+        app.source = "not-a-real-agent".into();
+        app.preview_cache
+            .insert("cached".into(), ("hello\nworld".into(), 11, 2));
+        app.last_error = None;
+
+        app.load_preview();
+
+        assert_eq!(app.transcript.as_deref(), Some("hello\nworld"));
+        assert_eq!(app.transcript_lines, 2);
+        assert_eq!(app.transcript_chars, 11);
+        assert!(app.last_error.is_none());
     }
 
     #[test]
