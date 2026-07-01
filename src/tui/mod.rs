@@ -15,6 +15,7 @@ use std::io::{self, IsTerminal};
 
 use anyhow::Result;
 use crossterm::cursor::Show;
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -32,7 +33,10 @@ impl TuiGuard {
     fn new() -> Result<Self> {
         enable_raw_mode()?;
         let mut out = io::stdout();
-        execute!(out, EnterAlternateScreen)?;
+        // Capture the mouse so the terminal reports wheel/trackpad scrolling as
+        // `Event::Mouse` instead of translating it into a burst of arrow keys
+        // (which queue up and read like runaway scrolling).
+        execute!(out, EnterAlternateScreen, EnableMouseCapture)?;
         Ok(Self)
     }
 }
@@ -40,7 +44,7 @@ impl TuiGuard {
 impl Drop for TuiGuard {
     fn drop(&mut self) {
         let mut out = io::stdout();
-        let _ = execute!(out, LeaveAlternateScreen, Show);
+        let _ = execute!(out, LeaveAlternateScreen, DisableMouseCapture, Show);
         let _ = disable_raw_mode();
     }
 }

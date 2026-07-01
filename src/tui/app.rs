@@ -291,6 +291,8 @@ impl App {
             AppEvent::ScrollFast(direction) => {
                 self.scroll_by(direction * FAST_SCROLL_LINES);
             }
+            // Mouse wheel always scrolls the transcript, regardless of focus.
+            AppEvent::ScrollWheel(delta) => self.scroll_by(delta),
             AppEvent::SelectSession => {
                 // Enter is context-sensitive: in the export modal it confirms
                 // the write; otherwise it selects the highlighted session.

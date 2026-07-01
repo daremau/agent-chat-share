@@ -1,6 +1,9 @@
 //! Map raw `crossterm` events into the TUI's pure `AppEvent` enum.
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
+
+/// Lines the transcript scrolls per mouse-wheel / trackpad notch.
+const WHEEL_LINES: i64 = 3;
 
 /// Pure events the reducer consumes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +20,9 @@ pub enum AppEvent {
     NavVertical(i64),
     /// Fast scroll the transcript; `1` is down, `-1` is up (Ctrl-D/Ctrl-U).
     ScrollFast(i64),
+    /// Mouse-wheel / trackpad scroll of the transcript, in lines. Always
+    /// targets the transcript regardless of focus. Positive is down.
+    ScrollWheel(i64),
     SelectSession,
     Reload,
     Share,
@@ -34,7 +40,18 @@ pub enum AppEvent {
 pub fn map(event: Event) -> Option<AppEvent> {
     match event {
         Event::Key(k) => key(k),
-        Event::Resize(_, _) => None,
+        Event::Mouse(m) => mouse(m),
+        _ => None,
+    }
+}
+
+/// Map wheel/trackpad scrolling to transcript scroll. Other mouse events
+/// (motion, clicks) are ignored; capturing the mouse is only to stop the
+/// terminal from injecting arrow keys for scroll.
+fn mouse(m: MouseEvent) -> Option<AppEvent> {
+    match m.kind {
+        MouseEventKind::ScrollDown => Some(AppEvent::ScrollWheel(WHEEL_LINES)),
+        MouseEventKind::ScrollUp => Some(AppEvent::ScrollWheel(-WHEEL_LINES)),
         _ => None,
     }
 }
@@ -141,5 +158,28 @@ mod tests {
     #[test]
     fn resize_is_ignored() {
         assert_eq!(map(Event::Resize(80, 24)), None);
+    }
+
+    #[test]
+    fn wheel_scrolls_transcript() {
+        use crossterm::event::MouseEvent;
+        let wheel = |kind| {
+            Event::Mouse(MouseEvent {
+                kind,
+                column: 0,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            })
+        };
+        assert_eq!(
+            map(wheel(MouseEventKind::ScrollDown)),
+            Some(AppEvent::ScrollWheel(WHEEL_LINES))
+        );
+        assert_eq!(
+            map(wheel(MouseEventKind::ScrollUp)),
+            Some(AppEvent::ScrollWheel(-WHEEL_LINES))
+        );
+        // Motion and other mouse events are ignored.
+        assert_eq!(map(wheel(MouseEventKind::Moved)), None);
     }
 }
